@@ -1,10 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -48,6 +51,11 @@ type Tunnel struct {
 
 	// closing
 	closing int32
+}
+
+type lb_host struct {
+	Hostname string
+	Weight   int
 }
 
 // Common functionality for registering virtually hosted protocols
@@ -181,14 +189,23 @@ func NewTunnel(m *msg.ReqTunnel, ctl *Control) (t *Tunnel, err error) {
 	}
 
 	t.AddLogPrefix(t.Id())
-	t.Info("Registered new tunnel on: %s %s", t.ctl.conn.Id(), t.url) // dome debug
+	lbhost := lb_host{Hostname: t.url, Weight: 1}
+	body, _ := json.Marshal(lbhost)
+	response := make(chan *http.Response)
+	go SendPostAsync("http://localhost:8123", body, response)
+	t.Info("Registered new tunnel on: %s %s", t.ctl.conn.Id(), string(body)) // dome debug
 
 	metrics.OpenTunnel(t)
 	return
 }
 
 func (t *Tunnel) Shutdown() {
-	t.Info("Shutting down %s", t.url) // dome debug
+
+	lbhost := lb_host{Hostname: t.url, Weight: 1}
+	body, _ := json.Marshal(lbhost)
+	response := make(chan *http.Response)
+	t.Info("Shutting down %s %s", t.ctl.conn.Id(), string(body)) // dome debug
+	go SendPostAsync("http://localhost:8123", body, response)
 
 	// mark that we're shutting down
 	atomic.StoreInt32(&t.closing, 1)
@@ -296,4 +313,18 @@ func (t *Tunnel) HandlePublicConnection(publicConn conn.Conn) {
 	// join the public and proxy connections
 	bytesIn, bytesOut := conn.Join(publicConn, proxyConn)
 	metrics.CloseConnection(t, publicConn, startTime, bytesIn, bytesOut)
+}
+func SendPostRequest(url string, body []byte) *http.Response {
+	response, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		panic(err)
+	}
+	return response
+}
+func SendPostAsync(url string, body []byte, rc chan *http.Response) {
+	response, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		rc <- nil
+	}
+	rc <- response
 }
