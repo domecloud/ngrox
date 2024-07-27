@@ -41,7 +41,7 @@ func NewProxy(pxyConn conn.Conn, regPxy *msg.RegProxy) {
 	pxyConn.SetType("pxy")
 
 	// look up the control connection for this proxy
-	pxyConn.Info("Registering new proxy for %s", regPxy.ClientId)
+	pxyConn.Info("Registering new proxy for %s %s %s", regPxy.ClientId, "", pxyConn.Id())
 	ctl := controlRegistry.Get(regPxy.ClientId)
 
 	if ctl == nil {

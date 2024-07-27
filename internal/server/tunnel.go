@@ -181,14 +181,14 @@ func NewTunnel(m *msg.ReqTunnel, ctl *Control) (t *Tunnel, err error) {
 	}
 
 	t.AddLogPrefix(t.Id())
-	t.Info("Registered new tunnel on: %s", t.ctl.conn.Id())
+	t.Info("Registered new tunnel on: %s %s", t.ctl.conn.Id(), t.url) // dome debug
 
 	metrics.OpenTunnel(t)
 	return
 }
 
 func (t *Tunnel) Shutdown() {
-	t.Info("Shutting down")
+	t.Info("Shutting down %s", t.url) // dome debug
 
 	// mark that we're shutting down
 	atomic.StoreInt32(&t.closing, 1)
