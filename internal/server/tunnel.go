@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -189,10 +190,12 @@ func NewTunnel(m *msg.ReqTunnel, ctl *Control) (t *Tunnel, err error) {
 	}
 
 	t.AddLogPrefix(t.Id())
-	lbhost := lb_host{Hostname: t.url, Weight: 1}
+	u, _ := url.Parse(t.url)
+	t.Info("Debug url on: %s %s", t.url, u.Hostname()) // dome debug
+	lbhost := lb_host{Hostname: u.Hostname(), Weight: 1}
 	body, _ := json.Marshal(lbhost)
 	response := make(chan *http.Response)
-	go SendPostAsync("http://localhost:8123", body, response)
+	go SendPostAsync("http://nginx:8081", body, response)
 	t.Info("Registered new tunnel on: %s %s", t.ctl.conn.Id(), string(body)) // dome debug
 
 	metrics.OpenTunnel(t)
@@ -201,11 +204,14 @@ func NewTunnel(m *msg.ReqTunnel, ctl *Control) (t *Tunnel, err error) {
 
 func (t *Tunnel) Shutdown() {
 
-	lbhost := lb_host{Hostname: t.url, Weight: 1}
+	t.AddLogPrefix(t.Id())
+	u, _ := url.Parse(t.url)
+	t.Info("Debug url on: %s %s", t.url, u.Hostname()) // dome debug
+	lbhost := lb_host{Hostname: u.Hostname(), Weight: 1}
 	body, _ := json.Marshal(lbhost)
 	response := make(chan *http.Response)
-	t.Info("Shutting down %s %s", t.ctl.conn.Id(), string(body)) // dome debug
-	go SendPostAsync("http://localhost:8123", body, response)
+	go SendPostAsync("http://nginx:8081/rm-host", body, response)
+	t.Info("Registered new tunnel on: %s %s", t.ctl.conn.Id(), string(body)) // dome debug
 
 	// mark that we're shutting down
 	atomic.StoreInt32(&t.closing, 1)
