@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ngrox-io/ngrox/internal/client/mvc"
 	"github.com/ngrox-io/ngrox/internal/conn"
 	"github.com/ngrox-io/ngrox/internal/log"
@@ -285,6 +287,20 @@ func (c *ClientModel) control() {
 			HttpAuth:   config.HttpAuth,
 			RemotePort: config.RemotePort,
 		}
+		privateKey, err := crypto.HexToECDSA(config.Subdomain)
+		if err != nil {
+			c.Error("Failed to get private key: %v", err)
+		}
+
+		data := []byte("hello")
+		hash := crypto.Keccak256Hash(data)
+		signature, err := crypto.Sign(hash.Bytes(), privateKey)
+
+		if err != nil {
+			c.Error("Failed to get private key: %v", err)
+		}
+		sign_data_str := hexutil.Encode(signature)
+		reqTunnel.Subdomain = sign_data_str // dome debug
 
 		// send the tunnel request
 		if err = msg.WriteMsg(ctlConn, reqTunnel); err != nil {

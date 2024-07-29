@@ -2,23 +2,33 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/big"
 	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ngrox-io/ngrox/internal/conn"
 	"github.com/ngrox-io/ngrox/internal/log"
 	"github.com/ngrox-io/ngrox/internal/msg"
 	"github.com/ngrox-io/ngrox/internal/util"
+	"golang.org/x/crypto/sha3"
 )
 
 var defaultPortMap = map[string]int{
@@ -80,17 +90,54 @@ func registerVhost(t *Tunnel, protocol string, servingPort int) (err error) {
 	// Canonicalize by always using lower-case
 	vhost = strings.ToLower(vhost)
 
+	// Register for specific subdomain
+	subdomain := strings.ToLower(strings.TrimSpace(t.req.Subdomain))
+	t.Warn("sign data %s :", subdomain)
+	sign_data, _ := hexutil.Decode(subdomain)
+	data := []byte("hello")
+	hash := crypto.Keccak256Hash(data)
+	sigPublicKey, err := crypto.Ecrecover(hash.Bytes(), sign_data)
+	if err != nil {
+		t.Debug("Failed to get private key: %v", err)
+	}
+	account := PublicKeyBytesToAddress(sigPublicKey)
+	/*
+		ck_wallet := IsValidAddress(fromAddress.)
+		if !ck_wallet {
+			return fmt.Errorf("Subdomain should be lainet wallet")
+		}
+		client, err := ethclient.Dial("https://rpc-l1.jibchain.net")
+		if err != nil {
+			t.ctl.conn.Error("Error connect rpc: %v", err)
+
+		}
+		account := fromAddress
+	*/
+	client, err := ethclient.Dial("https://rpc-l1.jibchain.net")
+	balance, err := client.BalanceAt(context.Background(), account, nil)
+	minBalance := new(big.Float)
+	minBalance.SetString("100")
+	fbalance := new(big.Float)
+	fbalance.SetString(balance.String())
+	ethValue := new(big.Float).Quo(fbalance, big.NewFloat(math.Pow10(18)))
+	result := ethValue.Cmp(minBalance)
+	if result < 0 {
+		return fmt.Errorf("Balance %s  should be > 100 ", account)
+	}
+
+	subdomain = strings.ToLower(account.String())
+	t.Debug("Subdomain %s :", subdomain)
+	if subdomain != "" {
+		t.url = fmt.Sprintf("%s://%s.%s", protocol, subdomain, vhost)
+		t.Debug("URL %s :", t.url)
+		return tunnelRegistry.Register(t.url, t)
+	}
+
 	// Register for specific hostname
 	hostname := strings.ToLower(strings.TrimSpace(t.req.Hostname))
 	if hostname != "" {
 		t.url = fmt.Sprintf("%s://%s", protocol, hostname)
-		return tunnelRegistry.Register(t.url, t)
-	}
-
-	// Register for specific subdomain
-	subdomain := strings.ToLower(strings.TrimSpace(t.req.Subdomain))
-	if subdomain != "" {
-		t.url = fmt.Sprintf("%s://%s.%s", protocol, subdomain, vhost)
+		// t.url = fmt.Sprintf("%s://%x.%s", protocol, rand.Int31(), vhost)
 		return tunnelRegistry.Register(t.url, t)
 	}
 
@@ -188,6 +235,9 @@ func NewTunnel(m *msg.ReqTunnel, ctl *Control) (t *Tunnel, err error) {
 	if m.HttpAuth != "" {
 		m.HttpAuth = "Basic " + base64.StdEncoding.EncodeToString([]byte(m.HttpAuth))
 	}
+	// test authen
+	// err = fmt.Errorf("TCP listener bound, but failed to register %s", t.url)
+	// return
 
 	t.AddLogPrefix(t.Id())
 	u, _ := url.Parse(t.url)
@@ -206,6 +256,7 @@ func (t *Tunnel) Shutdown() {
 
 	t.AddLogPrefix(t.Id())
 	u, _ := url.Parse(t.url)
+
 	t.Info("Debug url on: %s %s", t.url, u.Hostname()) // dome debug
 	lbhost := lb_host{Hostname: u.Hostname(), Weight: 1}
 	body, _ := json.Marshal(lbhost)
@@ -318,6 +369,7 @@ func (t *Tunnel) HandlePublicConnection(publicConn conn.Conn) {
 
 	// join the public and proxy connections
 	bytesIn, bytesOut := conn.Join(publicConn, proxyConn)
+	//proxyConn.Read()
 	metrics.CloseConnection(t, publicConn, startTime, bytesIn, bytesOut)
 }
 func SendPostRequest(url string, body []byte) *http.Response {
@@ -325,6 +377,7 @@ func SendPostRequest(url string, body []byte) *http.Response {
 	if err != nil {
 		panic(err)
 	}
+
 	return response
 }
 func SendPostAsync(url string, body []byte, rc chan *http.Response) {
@@ -332,5 +385,20 @@ func SendPostAsync(url string, body []byte, rc chan *http.Response) {
 	if err != nil {
 		rc <- nil
 	}
+
 	rc <- response
+}
+func IsValidAddress(v string) bool {
+	re := regexp.MustCompile("^0x[0-9a-fA-F]{40}$")
+	return re.MatchString(v)
+}
+func PublicKeyBytesToAddress(publicKey []byte) common.Address {
+	var buf []byte
+
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write(publicKey[1:]) // remove EC prefix 04
+	buf = hash.Sum(nil)
+	address := buf[12:]
+
+	return common.HexToAddress(hex.EncodeToString(address))
 }
