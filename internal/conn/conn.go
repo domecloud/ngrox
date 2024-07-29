@@ -149,6 +149,7 @@ func DialHttpProxy(proxyUrl, addr, typ string, tlsCfg *tls.Config) (conn *logged
 	if err != nil {
 		return
 	}
+
 	resp.Body.Close()
 
 	if resp.StatusCode != 200 {
