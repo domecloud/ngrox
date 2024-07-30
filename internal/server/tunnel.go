@@ -367,9 +367,9 @@ func (t *Tunnel) HandlePublicConnection(publicConn conn.Conn) {
 	// no timeouts while connections are joined
 	proxyConn.SetDeadline(time.Time{})
 
-	// join the public and proxy connections
-	bytesIn, bytesOut := conn.Join(publicConn, proxyConn)
-	//proxyConn.Read()
+	bytesIn, bytesOut, totalToken := conn.Join(publicConn, proxyConn)
+	proxyConn.Warn("Data : in %d, out %d, totalToken %d ", bytesIn, bytesOut, totalToken)
+	// proxyConn.Read()
 	metrics.CloseConnection(t, publicConn, startTime, bytesIn, bytesOut)
 }
 func SendPostRequest(url string, body []byte) *http.Response {

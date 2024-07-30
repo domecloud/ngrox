@@ -2,6 +2,7 @@ package conn
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
@@ -10,6 +11,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 
 	vhost "github.com/inconshreveable/go-vhost"
@@ -194,16 +198,19 @@ func (c *loggedConn) CloseRead() error {
 	return c.tcp.CloseRead()
 }
 
-func Join(c Conn, c2 Conn) (int64, int64) {
+func Join(c Conn, c2 Conn) (int64, int64, int) {
 	var wait sync.WaitGroup
 
+	var rbuf bytes.Buffer
 	pipe := func(to Conn, from Conn, bytesCopied *int64) {
 		defer to.Close()
 		defer from.Close()
 		defer wait.Done()
 
 		var err error
-		*bytesCopied, err = io.Copy(to, from)
+
+		*bytesCopied, err = io.Copy(to, io.TeeReader(from, &rbuf))
+
 		if err != nil {
 			from.Warn("Copied %d bytes to %s before failing with error %v", *bytesCopied, to.Id(), err)
 		} else {
@@ -213,9 +220,27 @@ func Join(c Conn, c2 Conn) (int64, int64) {
 
 	wait.Add(2)
 	var fromBytes, toBytes int64
+
 	go pipe(c, c2, &fromBytes)
+	// rbuf.Reset()
 	go pipe(c2, c, &toBytes)
+
 	c.Info("Joined with connection %s", c2.Id())
+
 	wait.Wait()
-	return fromBytes, toBytes
+
+	// buf := new(strings.Builder)
+	//_, _ = io.Copy(buf, c)
+	index := strings.Index(rbuf.String(), "total_tokens")
+	totalToken := 0
+	if index == -1 {
+		totalToken = 0
+	} else {
+		exp := regexp.MustCompile(`"total_tokens":\d*`)
+		s := exp.FindString(rbuf.String())
+		s1 := strings.Split(s, ":")
+		totalToken, _ = strconv.Atoi(s1[1])
+	}
+
+	return fromBytes, toBytes, totalToken
 }

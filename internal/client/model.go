@@ -418,7 +418,7 @@ Content-Length: %d
 	c.update()
 	m.connTimer.Time(func() {
 		localConn := tunnel.Protocol.WrapConn(localConn, mvc.ConnectionContext{Tunnel: tunnel, ClientAddr: startPxy.ClientAddr})
-		bytesIn, bytesOut := conn.Join(localConn, remoteConn)
+		bytesIn, bytesOut, _ := conn.Join(localConn, remoteConn)
 		m.bytesIn.Update(bytesIn)
 		m.bytesOut.Update(bytesOut)
 		m.bytesInCount.Inc(bytesIn)
