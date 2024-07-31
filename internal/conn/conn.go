@@ -231,12 +231,10 @@ func Join(c Conn, c2 Conn) (int64, int64, int) {
 
 	// buf := new(strings.Builder)
 	//_, _ = io.Copy(buf, c)
-	index := strings.Index(rbuf.String(), "total_tokens")
 	totalToken := 0
-	if index == -1 {
-		totalToken = 0
-	} else {
-		exp := regexp.MustCompile(`"total_tokens":\d*`)
+	exp := regexp.MustCompile(`"total_tokens":\d*`)
+	ck := exp.MatchString(rbuf.String())
+	if ck {
 		s := exp.FindString(rbuf.String())
 		s1 := strings.Split(s, ":")
 		totalToken, _ = strconv.Atoi(s1[1])
